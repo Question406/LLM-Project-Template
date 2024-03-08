@@ -3,7 +3,6 @@ from fastchat.model import get_conversation_template
 from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
 import os
 import openai
-from model_configs import OPENAI_API_KEY
 from typing import Any, List
 import time
 import concurrent.futures
