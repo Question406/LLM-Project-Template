@@ -3,7 +3,7 @@ name = "src"
 version = "0.1"
 description = "A short description of your package"
 authors = [
-    { name = "Jiabao Ji", email = "your.email@example.com" }
+    { name = "Jiabao Ji", email = "jiabaoji@ucsb.edu" }
 ]
 license = { text = "MIT" }
 keywords = ["example", "project"]
@@ -28,6 +28,7 @@ dependencies = [
 
 [build-system]
 requires = [
+    "setuptools"
 ]
 build-backend = "setuptools.build_meta"
 
