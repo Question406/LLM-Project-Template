@@ -1,0 +1,35 @@
+[project]
+name = "src"
+version = "0.1"
+description = "A short description of your package"
+authors = [
+    { name = "Jiabao Ji", email = "your.email@example.com" }
+]
+license = { text = "MIT" }
+keywords = ["example", "project"]
+dependencies = [
+    "setuptools",
+    "wheel",
+    "omegaconf",
+    "wandb",
+    "hydra-core",
+    "numpy",
+    "pandas",
+    "codetiming",
+    "structlog",
+    "backoff",
+    "openai",
+    "protobuf",
+    "sentencepiece",
+    "rich",
+    "tiktoken",
+    "sentencepiece",
+]  # Add your dependencies here, e.g., ["requests>=2.20.0"]
+
+[build-system]
+requires = [
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src", "custom_tools"]

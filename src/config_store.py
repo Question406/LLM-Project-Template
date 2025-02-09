@@ -1,14 +1,6 @@
 from dataclasses import dataclass, field
 from hydra.core.config_store import ConfigStore
-from typing import List, Dict, Optional
-
-
-@dataclass
-class BuildParams:
-    depth: int = 3
-    width: int = 3
-    action_list: List[str] = field(default_factory=list)
-    action_prob: List[float] = field(default_factory=list)
+from typing import Optional
 
 
 @dataclass
@@ -16,10 +8,8 @@ class RunConfig:
     prompt_file: str
     dataset_name: str = "openai/gsm8k"
     llm_name: str = "llama"  # The name is set in the registry below
-    build_params: BuildParams = BuildParams()
     user_stop_token: str = "<|eot_id|>"
     PORT: int = 10000
-    action_name_mapping: Dict[str, str] = field(default_factory=dict)
 
 
 cs = ConfigStore.instance()
