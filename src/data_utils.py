@@ -3,6 +3,7 @@
 
 import os
 import numpy as np
+from typing import List, Dict, Any, Tuple
 
 
 class DataDict:
@@ -145,3 +146,45 @@ class DataDict:
 
     def to_dict(self):
         return self.data
+
+    def groupby(self, keys) -> Dict[str, "DataDict"]:
+        """
+        Groups the DataDict based on one or multiple keys.
+
+        Args:
+            keys (str or list of str): The key(s) used for grouping.
+
+        Returns:
+            dict: A dictionary where keys are unique values (or tuples for multiple keys)
+                  from the specified grouping keys, and values are DataDict instances
+                  containing the grouped data.
+        """
+        if isinstance(keys, str):
+            keys = [keys]  # Convert single key to list for uniform processing
+
+        def clean_group_key(group_key):
+            if len(group_key) == 1:
+                return group_key[0]
+            return group_key
+
+        grouped_data = {}
+        key_values_list = [self.data.get(k, []) for k in keys]
+
+        if any(not values for values in key_values_list):  # If any key does not exist
+            return {}
+
+        for idx in range(self.batch_size):
+            group_key = tuple(
+                values[idx] for values in key_values_list
+            )  # Create a unique tuple for multiple keys
+
+            if group_key not in grouped_data:
+                grouped_data[group_key] = {k: [] for k in self.data.keys()}
+
+            for k, v in self.data.items():
+                grouped_data[group_key][k].append(v[idx])
+
+        return {
+            clean_group_key(group_key): DataDict(group_values)
+            for group_key, group_values in grouped_data.items()
+        }
