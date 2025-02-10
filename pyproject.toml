@@ -33,4 +33,4 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["src", "custom_tools"]
+packages = ["src", "custom_tools", "prompts"]
