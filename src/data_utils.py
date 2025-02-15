@@ -1,9 +1,32 @@
-# This file defines several tool classes and functions.
-
+# This file defines GeneridDict, which is similar to TensorDict but supports non-tensor data, and each batch is a list of items.
 
 import os
 import numpy as np
-from typing import List, Dict, Any, Tuple
+from datasets import (
+    Dataset,
+    load_dataset,
+    load_from_disk,
+)
+from typing import Dict, Union, List
+
+
+def build_dataset(dataset_name):
+    if os.path.exists(dataset_name):
+        if os.path.isdir(dataset_name):
+            rawdata = load_from_disk(dataset_name)["train"]
+        else:
+            if dataset_name.endswith(".json"):
+                rawdata = load_dataset("json", data_files=[dataset_name])["train"]
+            elif dataset_name.endswith(".parquet"):
+                rawdata = load_dataset("parquet", data_files=[dataset_name])["train"]
+            else:
+                raise ValueError("Unknown dataset format")
+    else:
+        if "gsm8k" in dataset_name:
+            rawdata = load_dataset(dataset_name, "main")["train"]
+        else:
+            rawdata = load_dataset(dataset_name)["train"]
+    return rawdata
 
 
 class DataDict:
@@ -17,10 +40,21 @@ class DataDict:
         """
         self.data = data if data is not None else {}
 
+        if self.data:
+            for key, value in self.data.items():
+                if not isinstance(value, list):
+                    self.data[key] = [value]
+            lengths = [len(v) for v in self.data.values()]
+            if lengths and not all(l == lengths[0] for l in lengths):
+                raise ValueError(
+                    "All list values in DataDict must have the same length"
+                )
+            self.length = lengths[0]
+
     @property
     def batch_size(self):
         """Returns the batch size by checking the length of the first list item."""
-        return len(next(iter(self.data.values()), []))
+        return self.length
 
     def __getitem__(self, key):
         """If key is an int, return a single indexed item from all keys.
@@ -134,12 +168,14 @@ class DataDict:
             else:
                 self.data[k] = v if isinstance(v, list) else [v]
 
+        self.length = self.length + len(v) if isinstance(v, list) else self.length + 1
+
     def as_list_dict(self):
         """Ensures all values in the dictionary are lists."""
         return {k: v if isinstance(v, list) else [v] for k, v in self.data.items()}
 
     def __repr__(self):
-        return f"DataDict(batch_size={self.batch_size}, data={self.data})"
+        return f"DataDict(batch_size={self.batch_size}, data={list(self.data.keys())})"
 
     def __len__(self):
         return self.batch_size
@@ -188,3 +224,16 @@ class DataDict:
             clean_group_key(group_key): DataDict(group_values)
             for group_key, group_values in grouped_data.items()
         }
+
+
+def batchify_sampler(total_num, batch_size, shuffle=False) -> List[List[int]]:
+    if shuffle:
+        random_index = np.random.permutation(total_num).tolist()
+    else:
+        random_index = list(range(total_num))
+
+    all_indexes = []
+    for i in range(0, total_num, batch_size):
+        indexes = [random_index[j] for j in range(i, min(i + batch_size, total_num))]
+        all_indexes.append(indexes)
+    return all_indexes
