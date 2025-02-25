@@ -1,9 +1,11 @@
 # This file defines a runner class that runs evaluation in batches, and evaluates, and with a monitor class that supports experiment restoration.
 
 import os
+import torch
 import time
 import json
 import logging
+from functools import reduce
 import inspect
 from tqdm import tqdm
 from typing import Dict, Any
@@ -11,6 +13,7 @@ from pathlib import Path
 from datasets import Dataset
 from contextlib import contextmanager
 from transformers import AutoModelForCausalLM, AutoTokenizer
+from typing import List
 
 from src.config_store import RunConfig
 from src.data_utils import batchify_sampler, DataDict
@@ -43,12 +46,40 @@ class SequentialRunner:
     def log(self):
         pass
 
-    def consume_batch(self, batch):
-        # This function is the worker function that consumes a batch of data
+    @torch.no_grad()
+    def consume_batch(self, batch: DataDict) -> Dict[str, Any]:
+        all_inputs = batch["input"]
+        n = self.sampling_params.n
 
-        return {
-            "batch_num": len(batch),
-        }
+        outputs = self.model.batch_generate(
+            all_inputs,
+            **self.sampling_params,
+        )
+        outputs: List[Dict[str, Any]]
+        batch = batch.repeat_interleave(n)  # We split the different response
+        outputs = reduce(
+            lambda x, y: x + y,
+            [
+                [
+                    {"decode_id": response.pop("decode_id"), "output": response}
+                    for response in output
+                ]
+                for output in outputs
+            ],
+        )
+        batch.union(DataDict.from_list_of_dicts(outputs))
+
+        # Do batch-wise evaluation
+        if self.eval_fn is not None:
+            jobs = [
+                (output["text"], gt["ground_truth"])
+                for output, gt in zip(batch["output"], batch["reward_model"])
+            ]
+            cur_batch_result = [self.eval_fn(*job) for job in jobs]
+            cur_batch_result = DataDict.from_list_of_dicts(cur_batch_result)
+            batch.union(cur_batch_result)
+
+        return {"batch_num": len(all_inputs), "batch_res": batch}
 
     def run(self):
         all_indexes = batchify_sampler(

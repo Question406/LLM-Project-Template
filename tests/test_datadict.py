@@ -1,6 +1,6 @@
 import unittest
-
 from src.data_utils import DataDict
+from test_utils import RichTestResult, RichTestRunner
 
 
 class TestDataDict(unittest.TestCase):
@@ -75,4 +75,4 @@ class TestDataDict(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(testRunner=RichTestRunner(), exit=False)
