@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from hydra.core.config_store import ConfigStore
 from typing import Optional
+from .api import SampleParams
 
 
 @dataclass
@@ -10,6 +11,7 @@ class RunConfig:
     llm_name: str = "llama"  # The name is set in the registry below
     user_stop_token: str = "<|eot_id|>"
     PORT: int = 10000
+    sample_params: SampleParams = SampleParams()
 
 
 cs = ConfigStore.instance()

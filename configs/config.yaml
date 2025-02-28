@@ -2,9 +2,32 @@
 defaults:
   - _self_
 
+dataset_name: null
+llm_name: null
+PORT: 10000
+max_sample: -1
+start_index: -1
+end_index: -1
+resume: false
+batch_size: -1
+
+input_key: null
+prompt_file: null
+
+run_data: null
+
+sample_params:
+  max_tokens: 100
+  temperature: 0.5
+  top_p: 1.0
+  frequency_penalty: null
+  presence_penalty: null
+  stop: null
+  n: 1
+
 hydra:
   run:
-    dir: outputs/${hydra.job.name}/{hydra.job.override_dirname}/${now:%Y-%m-%d_%H-%M-%S}
+    dir: outputs/${hydra.job.name}-${runner}-${llm_name}/${run_data}-${now:%Y-%m-%d_%H-%M-%S}/start_index@${start_index},end_index@${end_index}
   sweep:
     dir: outputs_multirun/${hydra.job.name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
     subdir: ${hydra.job.num}
@@ -12,6 +35,3 @@ hydra:
     config:
       override_dirname:
         exclude_keys: []
-
-OPENAI_API_KEY: ""
-BASEDIR: ""
