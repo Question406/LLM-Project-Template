@@ -4,28 +4,33 @@ import os
 import numpy as np
 from datasets import (
     Dataset,
+    DatasetDict,
     load_dataset,
     load_from_disk,
 )
 from typing import Dict, Union, List
 
 
-def build_dataset(dataset_name):
+def build_dataset(dataset_name, split="train") -> Dataset:
+    """Load dataset from disk or huggingface datasets"""
     if os.path.exists(dataset_name):
         if os.path.isdir(dataset_name):
-            rawdata = load_from_disk(dataset_name)["train"]
+            rawdata = load_from_disk(dataset_name)
         else:
             if dataset_name.endswith(".json"):
-                rawdata = load_dataset("json", data_files=[dataset_name])["train"]
+                rawdata = load_dataset("json", data_files=[dataset_name])
             elif dataset_name.endswith(".parquet"):
-                rawdata = load_dataset("parquet", data_files=[dataset_name])["train"]
+                rawdata = load_dataset("parquet", data_files=[dataset_name])
             else:
                 raise ValueError("Unknown dataset format")
     else:
         if "gsm8k" in dataset_name:
-            rawdata = load_dataset(dataset_name, "main")["train"]
+            rawdata = load_dataset(dataset_name, "main")
         else:
-            rawdata = load_dataset(dataset_name)["train"]
+            rawdata = load_dataset(dataset_name)
+    if isinstance(rawdata, DatasetDict):
+        if split in rawdata:
+            rawdata = rawdata[split]
     return rawdata
 
 
