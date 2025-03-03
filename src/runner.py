@@ -110,6 +110,7 @@ class Monitor:
         self.total_time = 0  # Track total execution time
         self.num_batches = 0  # Track number of batches processed
         self.all_results = []
+        self.full_res = None
 
         if resume:
             self.restore()
@@ -189,6 +190,7 @@ class Monitor:
         all_res = reduce(lambda x, y: x.union(y), self.all_results)
         uids = all_res["uid"]
         accs = all_res["score"]
+        self.full_res = all_res
         metric = {}
         for k in [1, 2, 4, 8]:
             passk = pass_at_k(uids, accs, k)
@@ -197,7 +199,9 @@ class Monitor:
         return metric
 
     def dump_results(self):
-        all_results = reduce(lambda x, y: x.union(y), self.all_results)
+        # all_results = reduce(lambda x, y: x.union(y), self.all_results)
+        assert self.full_res is not None
+        all_results = self.full_res
         dataset = Dataset.from_dict(all_results.to_dict())
         dataset.save_to_disk(str(self.rundir / "finalresult"))
         shutil.rmtree(str(self.cache_dir))
