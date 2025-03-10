@@ -1,12 +1,12 @@
 import openai
 import itertools
+import asyncio
+from logging import getLogger
 from abc import ABC, abstractmethod
 from dataclasses import asdict
 
 import backoff
 import copy
-import asyncio
-from logging import getLogger
 from typing import List, Dict, Any
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai.types.completion_choice import CompletionChoice
@@ -22,7 +22,31 @@ LOGGER = getLogger(__name__)
 
 
 def parse_api_output(response: openai.types.Completion):
-    return [choice for choice in response.choices]
+    parsed_responses = [
+        {"text": response.message.content, "decode_id": response.index}
+        for response in response.choices
+    ]
+    return parsed_responses
+
+
+def parse_vllm_output(responses: List[RequestOutput]):
+    def extract_single(output: RequestOutput):
+        res = [
+            {
+                "text": out.text,
+                # "token": out.token_ids,
+                "decode_id": out.index,
+                "len": len(out.token_ids),
+            }
+            for out in output.outputs
+        ]
+        return res
+
+    parsed_response = [
+        extract_single(response) for response in responses if response is not None
+    ]
+
+    return parsed_response
 
 
 class LanguageModel(ABC):
@@ -93,7 +117,14 @@ class VLLMLanguageModel(LanguageModel):
         n: int = None,
     ):
         if self.model is None:
-            self.model = LLM(self.model_name)
+            self.model = LLM(
+                self.model_name,
+                enable_prefix_caching=True,
+                enable_chunked_prefill=True,
+                swap_space=8,
+                # max_num_seqs=32,
+            )
+
         sample_params = self.prepare_sampling_params(
             max_tokens,
             temperature,
@@ -105,9 +136,10 @@ class VLLMLanguageModel(LanguageModel):
         )
         outputs = self.model.generate(prompt, sample_params)
         outputs: List[RequestOutput]
-        output_texts = [[x.text for x in output.outputs] for output in outputs]
-        output_texts = list(itertools.chain.from_iterable(output_texts))
-        return output_texts
+        # output_texts = [[x.text for x in output.outputs] for output in outputs]
+        # output_texts = list(itertools.chain.from_iterable(output_texts))
+        outputs = parse_vllm_output(outputs)
+        return outputs
 
     def batch_generate(
         self,
@@ -137,21 +169,21 @@ class APILanguageModel(LanguageModel):
 
     def __init__(
         self,
-        API_URL,
-        api_key,
-        model,
-        sample_params,
+        API_URL=None,
+        api_key=None,
+        model=None,
+        sample_params=None,
         user_stop_token=None,
         tokenizer=None,
     ):
         self.API_URL = API_URL
         self.api_key = api_key
         self.model_name = model
-        self.sample_params = asdict(sample_params)
+        self.sample_params = asdict(sample_params) if sample_params is not None else {}
         self.tokenizer = tokenizer
         self.user_stop_token = user_stop_token
 
-        self.client: openai.AsyncClient = openai.AsyncClient(
+        self.client: openai.Client = openai.Client(
             api_key=self.api_key,
             base_url=self.API_URL,
         )
@@ -160,7 +192,7 @@ class APILanguageModel(LanguageModel):
         return f"APILanguageModel({self.model_name}, port={self.API_URL})"
 
     @backoff.on_exception(backoff.expo, openai.OpenAIError, max_time=60, max_tries=3)
-    async def generate(
+    def generate(
         self,
         prompt: str,
         max_tokens: int = None,
@@ -181,7 +213,7 @@ class APILanguageModel(LanguageModel):
         )
 
         try:
-            response = await self.client.completions.create(
+            response = self.client.completions.create(
                 model=self.model_name,
                 prompt=prompt,
                 **final_sample_params,
@@ -194,7 +226,7 @@ class APILanguageModel(LanguageModel):
             LOGGER.error(f"Unexpected error: {e}")
             raise
 
-    async def batch_generate(
+    def batch_generate(
         self,
         prompts: List[str],
         max_tokens: int = None,
@@ -206,22 +238,19 @@ class APILanguageModel(LanguageModel):
         n: int = None,
         return_text: bool = True,
     ):
-        tasks = [
-            asyncio.create_task(
-                self.generate(
-                    prompt,
-                    max_tokens,
-                    temperature,
-                    top_p,
-                    frequency_penalty,
-                    presence_penalty,
-                    stop,
-                    n,
-                )
+        results = [
+            self.generate(
+                prompt,
+                max_tokens,
+                temperature,
+                top_p,
+                frequency_penalty,
+                presence_penalty,
+                stop,
+                n,
             )
             for prompt in prompts
         ]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Handle any exceptions gracefully
         final_results = []
@@ -240,7 +269,6 @@ class APILanguageModel(LanguageModel):
             return res
 
 
-# TODO (jiabao): this has not been tested
 class GPTLanguageModel(APILanguageModel):
     @backoff.on_exception(backoff.expo, openai.OpenAIError, max_time=10, max_tries=3)
     def generate(
@@ -277,7 +305,8 @@ class GPTLanguageModel(APILanguageModel):
             LOGGER.error(f"Unexpected error: {e}")
             raise
 
-        return response.choices
+        outputs = parse_api_output(response)
+        return outputs
 
 
 def convert_param2hf(openai_param: Dict[str, Any]) -> Dict[str, Any]:
