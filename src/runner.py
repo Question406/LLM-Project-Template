@@ -1,25 +1,30 @@
 # This file defines a runner class that runs evaluation in batches, and evaluates, and with a monitor class that supports experiment restoration.
 
 import os
+import re
 import time
 import json
+import torch
 import shutil
 import logging
 import inspect
 import structlog
+import concurrent
+import numpy as np
+from collections import Counter
 from tqdm import tqdm
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Callable, List
 from pathlib import Path
 from datasets import Dataset
 from contextlib import contextmanager
 from transformers import AutoModelForCausalLM, AutoTokenizer
-import concurrent
 from functools import reduce
 
-from earlyexit.eval_utils import pass_at_k
-from earlyexit.config_store import RunConfig
-from earlyexit.data_utils import batchify_sampler, DataDict
-from earlyexit.api import SampleParams
+from src.eval_utils import pass_at_k
+from src.config_store import RunConfig
+from src.data_utils import batchify_sampler, DataDict
+from src.api import SampleParams
+from src.registry_utils import Registry
 
 LOGGER = structlog.getLogger(__name__)
 
@@ -55,45 +60,21 @@ class SequentialRunner:
     def log(self):
         pass
 
-    def consume_batch(self, batch: DataDict):
-        # This function is the worker function that consumes a batch of data
-        return {
-            "batch_num": len(batch),
-        }
+    @torch.no_grad()
+    def consume_batch(
+        self, batch: DataDict, test_key: str = "reward_model"
+    ) -> Dict[str, Any]:
+        pass
 
-    def run(self, resume=False):
-        all_indexes = batchify_sampler(
-            len(self.dataset), self.batch_size, shuffle=False
-        )
-        if not resume:
-            # If not resuming, clear any previous state.
-            self.monitor.reset()
-            start_batch_index = 0
-            LOGGER.info("Evaluation from start")
-        else:
-            # When resuming, skip over the batches already processed.
-            start_batch_index = self.monitor.num_batches
-            LOGGER.info("Resuming from batch", start_batch_index)
-
-        for idx, indexes in enumerate(
-            tqdm(
-                all_indexes[start_batch_index:],
-                desc="Running batch",
-                initial=start_batch_index,
-            )
-        ):
-            batch = DataDict.from_list_of_dicts([self.dataset[i] for i in indexes])
-            with self.monitor.track_batch_time():
-                batch_res = self.consume_batch(batch)
-            self.monitor.update(batch_res)
-            self.monitor.save()
+    def run(self, resume=False, test_key="reward_model"):
+        pass
 
     def stop(self):
         self.metrics = self.monitor.stop()
         LOGGER.info("Stopping the runner and saving the state")
         LOGGER.info("Final state", metrics=self.metrics, state=self.monitor.state)
-        with open("metrics.json", "w") as f:
-            json.dump(self.metrics, f, indent=2)
+        # with open("metrics.json", "w") as f:
+        # json.dump(self.metrics, f, indent=2)
         self.monitor.dump_results()
 
 
@@ -187,21 +168,25 @@ class Monitor:
 
     def stop(self):
         # merge pass@k results
-        all_res = reduce(lambda x, y: x.union(y), self.all_results)
-        uids = all_res["uid"]
-        accs = all_res["score"]
-        self.full_res = all_res
         metric = {}
-        for k in [1, 2, 4, 8]:
-            passk = pass_at_k(uids, accs, k)
-            metric[k] = passk
-
+        all_res = reduce(lambda x, y: x.union(y), self.all_results)
+        if "score" in all_res and "uid" in all_res:
+            uids = all_res["uid"]
+            accs = all_res["score"]
+            self.full_res = all_res
+            for k in [1, 2, 4, 8]:
+                passk = pass_at_k(uids, accs, k)
+                metric[k] = passk
         return metric
 
     def dump_results(self):
-        # all_results = reduce(lambda x, y: x.union(y), self.all_results)
-        assert self.full_res is not None
-        all_results = self.full_res
+        all_results = reduce(lambda x, y: x.union(y), self.all_results)
+        # assert self.full_res is not None
+        # all_results = self.full_res
         dataset = Dataset.from_dict(all_results.to_dict())
         dataset.save_to_disk(str(self.rundir / "finalresult"))
         shutil.rmtree(str(self.cache_dir))
+
+
+RUNNER_REGISTRY = Registry("RunnerCLS")
+RUNNER_REGISTRY.register("sequential", SequentialRunner)
